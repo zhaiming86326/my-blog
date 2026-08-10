@@ -70,6 +70,36 @@ CODE_FENCE_RE = re.compile(r"```([\w+#-]*)\n(.*?)```", re.DOTALL)
 MAX_CODE_BLOCKS = 10     # 日报最多展示的代码片段数
 MAX_CODE_LINES = 200     # 每个片段最多行数
 
+# 敏感信息脱敏(发布前强制兜底, 不依赖总结模型)
+SENSITIVE_PATTERNS = [
+    # API 密钥: sk-xxxx / AKIA... / ghp_... (github) 等
+    (re.compile(r"\b(sk-[A-Za-z0-9_-]{12,})\b"), "sk-[已脱敏]"),
+    (re.compile(r"\b(AKIA[0-9A-Z]{16})\b"), "AKIA[已脱敏]"),
+    (re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{20,})\b"), "gh[已脱敏]"),
+    (re.compile(r"\b(xox[baprs]-[A-Za-z0-9-]{10,})\b"), "xox[已脱敏]"),
+    # 私有密钥块
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+     "-----BEGIN PRIVATE KEY-----[已脱敏]-----END PRIVATE KEY-----"),
+    # 赋值形式的凭据: password= / api_key: / token = 等
+    (re.compile(r"(?i)\b(password|passwd|pwd|secret|api[_-]?key|access[_-]?key|client[_-]?secret|token|bearer)\b\s*[=:]\s*['\"]?[^\s'\"&;]{6,}"),
+     lambda m: m.group(1) + "=[已脱敏]"),
+    # 数据库/服务连接串 user:pass@
+    (re.compile(r"([a-z][a-z0-9+.-]*://[^/\s:@]+):([^@/\s]+)@"), r"\1:[已脱敏]@"),
+    # 邮箱
+    (re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]{2,}\b"), "[邮箱已脱敏]"),
+    # 中国大陆手机号
+    (re.compile(r"\b1[3-9]\d{9}\b"), "[手机号已脱敏]"),
+    # 身份证
+    (re.compile(r"\b\d{17}[\dXx]\b"), "[身份证已脱敏]"),
+]
+
+
+def _redact_sensitive(text: str) -> str:
+    """对文本做敏感信息强制脱敏(正则兜底)。"""
+    for pat, repl in SENSITIVE_PATTERNS:
+        text = pat.sub(repl, text)
+    return text
+
 
 def _extract_code_blocks(text: str) -> list[tuple[str, str]]:
     """从文本中提取围栏代码块,返回 [(lang, code)]。"""
@@ -90,6 +120,7 @@ def _dedup_blocks(blocks: list[tuple[str, str]]) -> list[tuple[str, str]]:
     seen = set()
     out = []
     for lang, code in blocks:
+        code = _redact_sensitive(code)  # 代码块强制脱敏
         key = code[:200]
         if key in seen:
             continue
@@ -289,7 +320,10 @@ def summarize_day(day: str, dry_run: bool = False) -> Path | None:
         raw_blocks += _extract_code_blocks((r.get("prompt") or "") + "\n" + (r.get("response") or ""))
     code_blocks = _dedup_blocks(raw_blocks)
     if code_blocks:
-        print(f"[*] 提取到 {len(code_blocks)} 个代码片段")
+        print(f"[*] 提取到 {len(code_blocks)} 个代码片段(已脱敏)")
+
+    # 知识总结也做强制脱敏兜底
+    knowledge = _redact_sensitive(knowledge)
 
     md = _make_markdown(day, {
         "total": len(rows),
