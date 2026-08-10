@@ -2,43 +2,38 @@
 title: "2026-08-10 AI 知识库日报"
 date: 2026-08-10T06:00:00+08:00
 tags: [AI知识库, daily]
-summary: "AI 对话知识提炼:共 209 条对话,提炼 13 条"
+summary: "AI 对话知识提炼:共 233 条对话,提炼 13 条"
 ---
 
-# 2026-08-10 AI 知识库日报
-
-> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(13/209 条有效)。
+> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(13/233 条有效)。
+> 信息来源分布:VSCode Roo(1条)、DeepSeek 网页(4条)、DeepSeek API(8条)
 
 ## 今日知识要点
 
-### API模型配置问题排查
-
-- **核心结论**
-  - 确认API模型名称正确，支持的模型包括`deepseek-chat`和`deepseek-reasoner`。
-  - 检查网络环境、代理设置及插件兼容性。
-
+### API 配置与模型选择
+- **核心结论**：在使用 DeepSeek API 时，确保正确配置模型名称和 URL。
 - **关键要点**
-  - **检查账户余额**：确保DeepSeek API账户有足够的余额[citation:1]。
-  - **核对模型ID**：确认使用的模型名称正确，如`deepseek-chat`或`deepseek-reasoner`[citation:2][citation:7][citation:8]。
-  - **网络和代理设置**：禁用IDE代理、检查系统网络权限及使用命令行工具测试API[citation:2][citation:3]。
-  - **插件配置兼容性**：确保插件与DeepSeek API兼容，关闭不必要的功能如“工具调用”[citation:6]。
-  - **手动填写模型名称**：在Body标签页中手动输入正确的模型名称，避免使用下拉菜单选项[citation:2][citation:7][citation:8]。
+  - 模型名称应为 `deepseek-chat` 或 `deepseek-reasoner` 而不是 `gpt-4.1` 等其他值。
+  - 配置界面中可能没有下拉菜单选项，需要手动填写模型名称。
+  - URL 应设置为 `https://api.deepseek.com/v1/chat/completions`。
+  - 如果使用的是 ProxyAI（原名CodeGPT），需通过“Custom OpenAI”方式进行配置。
+- **信息来源:** DeepSeek 网页
 
-- **出处**
-  - [来自对话1, 2, 3, 10, 11, 12]
-
-### API连接失败排查
-
-- **核心结论**
-  - 确认API模型名称正确，支持的模型包括`deepseek-v4-pro`和`deepseek-v4-flash`。
-  - 检查URL配置及API密钥。
-
+### 网络与代理设置排查
+- **核心结论**：网络和代理设置可能影响插件与 API 的通信。
 - **关键要点**
-  - **确认正确的模型名称**：确保使用的模型名称是DeepSeek官方支持的，如`gpt-4.1`不被支持[citation:9]。
-  - **检查URL和API密钥**：确保使用正确的URL（`https://api.deepseek.com/v1/chat/completions`）及有效的API密钥[citation:7][citation:8]。
+  - 检查并临时禁用 IDE 代理设置。
+  - 确认系统网络权限配置正确。
+  - 使用命令行工具直接测试 API 连接。
+- **信息来源:** DeepSeek 网页
 
-- **出处**
-  - [来自对话9, 11, 12]
+### 插件功能与兼容性问题
+- **核心结论**：插件的某些高级功能可能与 API 不兼容，导致请求失败。
+- **关键要点**
+  - 检查并关闭工具调用（Tools）功能。
+  - 在模型配置文件中设置 `"capabilities": { "tools": true }` 或禁用此功能。
+  - 显式设置 `stream=False` 关闭流式传输。
+- **信息来源:** DeepSeek 网页
 
 ---
 
