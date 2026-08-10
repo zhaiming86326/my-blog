@@ -2,3 +2,6 @@
 .reasonix/
 .codegraph/
 reasonix.toml
+
+# Wrangler local cache
+.wrangler/
