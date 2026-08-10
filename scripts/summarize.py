@@ -159,19 +159,20 @@ summary: "AI 对话知识提炼:共 {stats['total']} 条对话,提炼 {stats['ke
 """
 
 
-def _git_push(repo: Path, dry_run: bool) -> None:
-    file = f"content/posts/{date.today().isoformat()}-ai-knowledge.md"
+def _git_push(repo: Path, files: list[Path], dry_run: bool) -> None:
+    if not files:
+        return
     if dry_run:
-        print(f"[dry-run] 跳过 git push({file})")
+        print(f"[dry-run] 跳过 git push({len(files)} 个文件)")
         return
     try:
-        subprocess.run(["git", "add", file], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["git", "add", *[str(f) for f in files]], cwd=repo, check=True, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", f"docs: add AI knowledge daily summary ({date.today().isoformat()})"],
             cwd=repo, check=True, capture_output=True,
         )
         subprocess.run(["git", "push", "origin", "master"], cwd=repo, check=True, capture_output=True)
-        print("[*] 已提交并推送 GitHub")
+        print(f"[*] 已提交并推送 GitHub({len(files)} 篇日报)")
     except subprocess.CalledProcessError as e:
         print(f"[!] git 操作失败: {e.stderr.decode()[:300] if e.stderr else e}")
 
@@ -203,22 +204,25 @@ def ensure_ollama() -> bool:
     return False
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("day", nargs="?", default=None, help="要总结的日期 YYYY-MM-DD,默认昨天")
-    parser.add_argument("--dry-run", action="store_true", help="只生成 md,不 git push")
-    args = parser.parse_args()
+def _last_summarized_day() -> date | None:
+    """扫描已发布的日报, 返回已总结的最大日期(文件名=数据日期)。"""
+    posts_dir = REPO_ROOT / "content" / "posts"
+    if not posts_dir.exists():
+        return None
+    dates = []
+    for f in posts_dir.glob("*-ai-knowledge.md"):
+        m = re.match(r"(\d{4}-\d{2}-\d{2})-ai-knowledge\.md$", f.name)
+        if m:
+            dates.append(date.fromisoformat(m.group(1)))
+    return max(dates) if dates else None
 
-    day = args.day or (date.today() - timedelta(days=1)).isoformat()
 
-    if not ensure_ollama():
-        print("[!] Ollama 服务不可用,无法总结")
-        sys.exit(1)
-
+def summarize_day(day: str, dry_run: bool = False) -> Path | None:
+    """总结某一天, 返回生成的 md 文件路径; 无数据返回 None。"""
     rows = query_by_day(day)
     if not rows:
-        print(f"[!] {day} 没有对话记录,退出")
-        return
+        print(f"[!] {day} 没有对话记录,跳过")
+        return None
     kept = [r for r in rows if _is_worth_keeping(r)]
     print(f"[*] {day} 共 {len(rows)} 条记录,有效 {len(kept)} 条")
 
@@ -241,11 +245,47 @@ def main() -> None:
 
     out_dir = REPO_ROOT / "content" / "posts"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_file = out_dir / f"{date.today().isoformat()}-ai-knowledge.md"
+    out_file = out_dir / f"{day}-ai-knowledge.md"
     out_file.write_text(md, encoding="utf-8")
     print(f"[*] 已生成: {out_file}")
+    return out_file
 
-    _git_push(REPO_ROOT, args.dry_run)
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("day", nargs="?", default=None, help="要总结的日期 YYYY-MM-DD; 不填则自动补漏上次日报之后的所有日期")
+    parser.add_argument("--dry-run", action="store_true", help="只生成 md,不 git push")
+    args = parser.parse_args()
+
+    if not ensure_ollama():
+        print("[!] Ollama 服务不可用,无法总结")
+        sys.exit(1)
+
+    if args.day:
+        days = [args.day]
+    else:
+        # 自动补漏: 上次日报之后(含) 到 昨天, 逐天总结
+        today = date.today()
+        last = _last_summarized_day()
+        if last is None:
+            start = today - timedelta(days=1)
+            print("[*] 无历史日报,从昨天开始")
+        else:
+            start = last + timedelta(days=1)
+        end = today - timedelta(days=1)
+        if start > end:
+            print("[*] 没有需要补总结的日期")
+            return
+        days = [(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+        print(f"[*] 补漏 {len(days)} 天: {days[0]} ~ {days[-1]}")
+
+    files = []
+    for d in days:
+        f = summarize_day(d, args.dry_run)
+        if f:
+            files.append(f)
+
+    _git_push(REPO_ROOT, files, args.dry_run)
 
 
 if __name__ == "__main__":
