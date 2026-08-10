@@ -46,6 +46,25 @@ NOISE_RESPONSE_MARKERS = (
 )
 
 
+def _detect_source(row: dict) -> str:
+    """根据请求内容特征推断来源应用(IDE/插件)。"""
+    prompt = row.get("prompt") or ""
+    path = row.get("path") or ""
+    markers = [
+        ("Reasonix", "You are Reasonix"),
+        ("VSCode Roo", "You are Roo"),
+        ("IDEA ProxyAI", "ProxyAI Agent"),
+    ]
+    for name, marker in markers:
+        if marker in prompt:
+            return name
+    if path and "/api/v0/chat/completion" in path:
+        return "DeepSeek 网页"
+    if path and "chat/completions" in path:
+        return "DeepSeek API"
+    return "DeepSeek API"
+
+
 def _is_worth_keeping(row: dict) -> bool:
     """过滤噪音:空响应、错误响应、无实质用户消息的调用。"""
     prompt = (row.get("prompt") or "").strip()
@@ -72,14 +91,15 @@ def _truncate(text: str, limit: int = 1500) -> str:
 
 
 def _build_input(rows: list[dict]) -> str:
-    """把一天的对话整理成给模型的输入文本。"""
+    """把一天的对话整理成给模型的输入文本,标注每条来源。"""
     parts = []
     for i, r in enumerate(rows, 1):
         provider = r["provider"] or "?"
+        source = _detect_source(r)
         prompt = _truncate(r["prompt"] or "", 1200)
         resp = _truncate(r["response"] or "", 2000)
         parts.append(
-            f"### 对话 {i} [{provider}]\n"
+            f"### 对话 {i} [{provider}] [来源: {source}]\n"
             f"【用户/输入】\n{prompt}\n\n"
             f"【AI 输出】\n{resp}"
         )
@@ -92,7 +112,7 @@ SUMMARIZE_PROMPT = """你是一个知识库整理助手。下面是一天内用�
 
 ## 输出格式要求
 - 以 "## 今日知识要点" 开头,按主题分组,每个主题一个小节(### 主题名)
-- 每个小节包含:核心结论(1-2 句)、关键要点(条目列表)、可以的话给出出处(来自哪段对话)
+- 每个小节包含:核心结论(1-2 句)、关键要点(条目列表)、**信息来源**(这条知识来自哪个 IDE/插件:Reasonix / VSCode Roo / IDEA ProxyAI / DeepSeek 网页 / DeepSeek API,在"来源:"后列出)
 - **只输出提炼后的知识**,不要复述对话原文
 - 忽略:寒暄、废话、系统提示词、工具调用细节、思考过程
 - 如果当天没有实质知识,输出 "## 今日知识要点\n(无实质内容)"
@@ -119,6 +139,8 @@ def call_ollama(input_text: str) -> str:
 
 def _make_markdown(day: str, stats: dict, knowledge: str) -> str:
     tags = "AI知识库, daily"
+    sources = stats.get("sources", {})
+    src_line = "、".join(f"{k}({v}条)" for k, v in sources.items()) or "无"
     return f"""---
 title: "{day} AI 知识库日报"
 date: {date.today().isoformat()}T06:00:00+08:00
@@ -126,9 +148,8 @@ tags: [{tags}]
 summary: "AI 对话知识提炼:共 {stats['total']} 条对话,提炼 {stats['kept']} 条"
 ---
 
-# {day} AI 知识库日报
-
 > 由本机 AI 自动总结,数据来源:当日 AI 对话记录({stats['kept']}/{stats['total']} 条有效)。
+> 信息来源分布:{src_line}
 
 {knowledge}
 
@@ -201,6 +222,10 @@ def main() -> None:
     kept = [r for r in rows if _is_worth_keeping(r)]
     print(f"[*] {day} 共 {len(rows)} 条记录,有效 {len(kept)} 条")
 
+    from collections import Counter
+    src_counter = Counter(_detect_source(r) for r in kept)
+    print(f"[*] 来源分布: {dict(src_counter)}")
+
     if not kept:
         knowledge = "## 今日知识要点\n(无实质内容)"
     else:
@@ -208,7 +233,11 @@ def main() -> None:
         knowledge = call_ollama(input_text)
         print(f"[*] Ollama 总结完成({len(knowledge)} 字符)")
 
-    md = _make_markdown(day, {"total": len(rows), "kept": len(kept)}, knowledge)
+    md = _make_markdown(day, {
+        "total": len(rows),
+        "kept": len(kept),
+        "sources": dict(src_counter),
+    }, knowledge)
 
     out_dir = REPO_ROOT / "content" / "posts"
     out_dir.mkdir(parents=True, exist_ok=True)
