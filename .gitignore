@@ -12,3 +12,6 @@ reasonix.toml
 # Python 缓存
 __pycache__/
 *.pyc
+
+# Hugo 构建产物 (GitHub Actions 自动生成)
+public/
