@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from capture.addon import (  # noqa: E402
     _is_conversation_request,
+    _strip_citations,
     extract_request,
     extract_response,
     provider_for,
@@ -251,6 +252,14 @@ def test_extract_request_chatgpt_message_singular():
     check("不落库整个 JSON", "conversation_id" not in prompt, prompt)
 
 
+def test_strip_citations():
+    print("[strip_citations: 引用标注清理]")
+    check("单个标注", _strip_citations("余额不足[citation:1]。") == "余额不足。")
+    check("连续多个标注", _strip_citations("方式[citation:2][citation:5][citation:7]。") == "方式。")
+    check("无标注不变", _strip_citations("正常文本") == "正常文本")
+    check("多位数编号", _strip_citations("xx[citation:123]yy") == "xxyy")
+
+
 def test_extract_response_plain_text():
     print("[extract_response: 纯文本响应]")
     resp, truncated = extract_response("普通文本返回".encode())
@@ -273,5 +282,6 @@ if __name__ == "__main__":
     test_extract_response_gemini_web()
     test_extract_response_anthropic_sse()
     test_extract_response_deepseek_web_patch()
+    test_strip_citations()
     test_extract_response_plain_text()
     print(f"\n全部通过: {PASS} 项检查")

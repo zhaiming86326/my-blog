@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +57,13 @@ SENSITIVE_KEYS = {
 MAX_PROMPT_CHARS = 40_000        # prompt 过长截断
 MAX_RESPONSE_CHARS = 400_000     # response 过长截断
 MAX_BODY_BYTES = 2 * 1024 * 1024 # 超过 2MB 的请求体(如图片上传)跳过
+
+# AI 回复里的引用标注,如 [citation:2],对知识库无意义,统一剥掉
+CITATION_RE = re.compile(r"\[citation:\d+\]")
+
+
+def _strip_citations(text: str) -> str:
+    return CITATION_RE.sub("", text).strip()
 
 
 def provider_for(host: str) -> str | None:
@@ -492,6 +500,8 @@ class AICapture:
                 response = "\n\n".join(parts)
             else:
                 response = ""
+            prompt = _strip_citations(prompt)
+            response = _strip_citations(response)
             if prompt.strip() or response.strip():
                 insert_conversation(
                     ts=buf["ts"],
@@ -519,6 +529,8 @@ class AICapture:
 
             prompt, model, p_trunc = extract_request(flow.request.content or b"")
             resp_text, r_trunc = extract_response(flow.response.content)
+            prompt = _strip_citations(prompt)
+            resp_text = _strip_citations(resp_text)
             if not prompt.strip() and not resp_text.strip():
                 return
 
