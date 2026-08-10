@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
   <channel>
-    <title>My New Hugo Project</title>
+    <title>AI知识库</title>
     <link>https://example.org/</link>
-    <description>Recent content on My New Hugo Project</description>
+    <description>Recent content on AI知识库</description>
     <generator>Hugo</generator>
     <language>en-us</language>
     <lastBuildDate>Mon, 10 Aug 2026 00:00:00 +0000</lastBuildDate>

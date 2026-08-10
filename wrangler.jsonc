@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "my-blog",
+  "account_id": "0d832339db296e3fb9bbf4bce77c0fb0",
   "compatibility_date": "2026-08-10",
   "assets": {
     "directory": "./public"
