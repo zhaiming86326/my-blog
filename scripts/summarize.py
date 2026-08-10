@@ -34,8 +34,8 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from capture.db import DATA_DIR, query_by_day  # noqa: E402
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-# 默认用 7b(快, GPU 全量); 想用 14b 提升质量: 设环境变量 OLLAMA_MODEL=qwen2.5:14b-instruct
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+# 默认 14b(质量优先, 约 10-15 分钟/次); 想用 7b 提速: 设环境变量 OLLAMA_MODEL=qwen2.5:7b-instruct
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b-instruct")
 TIME_OUT = 900  # 秒,模型总结可能较慢
 
 # 明显是噪音/错误的响应特征(截断匹配)
