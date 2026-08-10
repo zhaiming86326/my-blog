@@ -8,3 +8,7 @@ reasonix.toml
 
 # AI 抓包原始记录 (含对话原文, 绝不允许进 git)
 .capture/
+
+# Python 缓存
+__pycache__/
+*.pyc
