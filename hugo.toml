@@ -2,3 +2,11 @@ baseURL = 'https://my-blog.mingming86326.workers.dev'
 locale = 'en-us'
 title = 'AI知识库'
 theme = "PaperMod"
+
+[params]
+  defaultTheme = "dark"
+  disableThemeToggle = true
+  enableEmoji = true
+  showReadingTime = true
+  showBreadCrumbs = true
+  showToc = true
