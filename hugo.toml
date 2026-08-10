@@ -1,4 +1,4 @@
-baseURL = 'https://example.org/'
+baseURL = 'https://my-blog.mingming86326.workers.dev'
 locale = 'en-us'
 title = 'AI知识库'
 theme = "PaperMod"
