@@ -187,6 +187,13 @@ SUMMARIZE_PROMPT = """你是一个知识库整理助手。下面是一天内用�
 - 如果当天没有实质知识,输出 "## 今日知识要点\n(无实质内容)"
 - 涉及邮箱/手机号/密钥/隐私信息时用 [已脱敏] 替代
 
+## 细节保留铁律(非常重要)
+- **具体的操作步骤、菜单路径(如 设置 → 代理 →)、配置项名称、选项位置、按钮名称必须原文保留**,不得替换为"检查相关设置""进行相应配置"之类的模糊表述
+- **具体的 URL、API 端点、HTTP 方法、请求参数、字段名(如请求 body 里的 model 字段)、命令行参数必须原文保留**
+- **具体的错误信息、报错文本、版本号、端口号、文件路径必须原文保留**
+- **宁多勿漏**:拿不准是否值得保留的操作细节,一律保留;只有在确认是寒暄/噪音时才省略
+- 允许并鼓励使用列表形式逐条列出操作步骤,而不是把它们合并成一句话
+
 ## 对话记录
 {input}
 """
@@ -198,7 +205,7 @@ def call_ollama(input_text: str) -> str:
         "model": OLLAMA_MODEL,
         "prompt": SUMMARIZE_PROMPT.format(input=input_text),
         "stream": False,
-        "options": {"temperature": 0.3, "num_ctx": 32768},
+        "options": {"temperature": 0.1, "num_ctx": 32768},
     }).encode()
     req = urllib.request.Request(OLLAMA_URL, data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=TIME_OUT) as r:
