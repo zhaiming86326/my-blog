@@ -5,3 +5,6 @@ reasonix.toml
 
 # Wrangler local cache
 .wrangler/
+
+# AI 抓包原始记录 (含对话原文, 绝不允许进 git)
+.capture/
