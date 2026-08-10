@@ -2,38 +2,54 @@
 title: "2026-08-10 AI 知识库日报"
 date: 2026-08-10T06:00:00+08:00
 tags: [AI知识库, daily]
-summary: "AI 对话知识提炼:共 233 条对话,提炼 13 条"
+summary: "AI 对话知识提炼:共 291 条对话,提炼 13 条,含代码片段"
 ---
 
-> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(13/233 条有效)。
+> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(13/291 条有效)。
 > 信息来源分布:VSCode Roo(1条)、DeepSeek 网页(4条)、DeepSeek API(8条)
 
 ## 今日知识要点
 
-### API 配置与模型选择
-- **核心结论**：在使用 DeepSeek API 时，确保正确配置模型名称和 URL。
+### API模型名称配置错误排查与解决方法
+- **核心结论**：确保使用正确的DeepSeek模型名称，避免因误用导致的API调用失败。
 - **关键要点**
-  - 模型名称应为 `deepseek-chat` 或 `deepseek-reasoner` 而不是 `gpt-4.1` 等其他值。
-  - 配置界面中可能没有下拉菜单选项，需要手动填写模型名称。
-  - URL 应设置为 `https://api.deepseek.com/v1/chat/completions`。
-  - 如果使用的是 ProxyAI（原名CodeGPT），需通过“Custom OpenAI”方式进行配置。
+  - 检查并确认使用的模型名称是否为`deepseek-chat`或`deepseek-reasoner`等官方支持的名称。
+  - 在配置中手动填写模型名称，而非依赖下拉菜单选择。
+  - 使用正确的URL：`https://api.deepseek.com/v1/chat/completions`。
 - **信息来源:** DeepSeek 网页
 
-### 网络与代理设置排查
-- **核心结论**：网络和代理设置可能影响插件与 API 的通信。
+### 解决网络与代理设置问题
+- **核心结论**：确保本地网络配置正确，并检查插件或IDE的代理设置是否影响API调用。
 - **关键要点**
-  - 检查并临时禁用 IDE 代理设置。
-  - 确认系统网络权限配置正确。
-  - 使用命令行工具直接测试 API 连接。
+  - 检查并临时禁用IDE中的代理设置，重启IDE后重新测试连接。
+  - 确认系统网络权限设置，特别是macOS上的隐私与安全性设置。
+  - 使用命令行工具直接测试API连通性。
 - **信息来源:** DeepSeek 网页
 
-### 插件功能与兼容性问题
-- **核心结论**：插件的某些高级功能可能与 API 不兼容，导致请求失败。
+### 处理400错误
+- **核心结论**：当遇到400错误时，可能是模型名称或请求参数不正确导致的。
 - **关键要点**
-  - 检查并关闭工具调用（Tools）功能。
-  - 在模型配置文件中设置 `"capabilities": { "tools": true }` 或禁用此功能。
-  - 显式设置 `stream=False` 关闭流式传输。
+  - 核实使用的模型名称是否为DeepSeek支持的版本（如`deepseek-chat`、`deepseek-reasoner`）。
+  - 检查API请求参数是否符合标准格式。
 - **信息来源:** DeepSeek 网页
+
+## 排查涉及的代码片段
+> 从当日对话中提取,供快速参考。
+### 片段 1(bash)
+```bash
+    # 把 YOUR_API_KEY 换成你自己的
+    curl -v "https://api.deepseek.com/v1/chat/completions" \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer YOUR_API_KEY" \
+      -d '{
+        "model": "deepseek-chat",
+        "messages": [{"role": "user", "content": "Hello"}]
+      }'
+```
+### 片段 2
+```
+https://api.deepseek.com/v1/chat/completions
+```
 
 ---
 
