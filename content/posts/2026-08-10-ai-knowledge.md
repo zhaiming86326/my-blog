@@ -2,36 +2,36 @@
 title: "2026-08-10 AI 知识库日报"
 date: 2026-08-10T06:00:00+08:00
 tags: [AI知识库, daily]
-summary: "AI 对话知识提炼:共 291 条对话,提炼 13 条,含代码片段"
+summary: "AI 对话知识提炼:共 300 条对话,提炼 13 条,含代码片段"
 ---
 
-> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(13/291 条有效)。
+> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(13/300 条有效)。
 > 信息来源分布:VSCode Roo(1条)、DeepSeek 网页(4条)、DeepSeek API(8条)
 
 ## 今日知识要点
 
-### API模型名称配置错误排查与解决方法
-- **核心结论**：确保使用正确的DeepSeek模型名称，避免因误用导致的API调用失败。
-- **关键要点**
-  - 检查并确认使用的模型名称是否为`deepseek-chat`或`deepseek-reasoner`等官方支持的名称。
-  - 在配置中手动填写模型名称，而非依赖下拉菜单选择。
-  - 使用正确的URL：`https://api.deepseek.com/v1/chat/completions`。
-- **信息来源:** DeepSeek 网页
+### API模型名称配置错误排查与解决
 
-### 解决网络与代理设置问题
-- **核心结论**：确保本地网络配置正确，并检查插件或IDE的代理设置是否影响API调用。
-- **关键要点**
-  - 检查并临时禁用IDE中的代理设置，重启IDE后重新测试连接。
-  - 确认系统网络权限设置，特别是macOS上的隐私与安全性设置。
-  - 使用命令行工具直接测试API连通性。
-- **信息来源:** DeepSeek 网页
+#### 核心结论
+确保使用DeepSeek API时，正确设置模型名称。常见错误包括使用不支持的模型名或下拉菜单中未列出的标准模型。
 
-### 处理400错误
-- **核心结论**：当遇到400错误时，可能是模型名称或请求参数不正确导致的。
-- **关键要点**
-  - 核实使用的模型名称是否为DeepSeek支持的版本（如`deepseek-chat`、`deepseek-reasoner`）。
-  - 检查API请求参数是否符合标准格式。
-- **信息来源:** DeepSeek 网页
+#### 关键要点
+- **检查模型名称**：确认使用的模型名称是 `deepseek-chat` 或 `deepseek-reasoner`。
+- **手动配置**：在ProxyAI等工具中，通过“Custom OpenAI”方式手动输入正确的模型名称。
+- **常见错误示例**
+  ```json
+  {"error":{"message":"The supported API model names are deepseek-v4-pro or deepseek-v4-flash, but you passed gpt-4.1.","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}
+  ```
+- **正确配置步骤**：
+  1. 进入 `Settings` -> `Tools` -> `ProxyAI` -> `Providers` -> `Custom OpenAI`。
+  2. 填写以下信息：
+     - **URL**: `https://api.deepseek.com/v1/chat/completions`
+     - **API Key**: 您的DeepSeek API密钥
+     - **Model (在Body中)**: 手动输入 `deepseek-chat` 或 `deepseek-reasoner`
+  3. 保存设置并重试连接。
+
+#### 来源:
+- ProxyAI / IDEA ProxyAI [来源: DeepSeek 网页]
 
 ## 排查涉及的代码片段
 > 从当日对话中提取,供快速参考。
