@@ -65,6 +65,41 @@ def _detect_source(row: dict) -> str:
     return "DeepSeek API"
 
 
+# Markdown 围栏代码块: ```lang\n...```
+CODE_FENCE_RE = re.compile(r"```([\w+#-]*)\n(.*?)```", re.DOTALL)
+MAX_CODE_BLOCKS = 10     # 日报最多展示的代码片段数
+MAX_CODE_LINES = 200     # 每个片段最多行数
+
+
+def _extract_code_blocks(text: str) -> list[tuple[str, str]]:
+    """从文本中提取围栏代码块,返回 [(lang, code)]。"""
+    out = []
+    for m in CODE_FENCE_RE.finditer(text):
+        lang = (m.group(1) or "").strip()
+        code = m.group(2).rstrip()
+        if not code.strip():
+            continue
+        lines = code.splitlines()
+        if len(lines) > MAX_CODE_LINES:
+            code = "\n".join(lines[:MAX_CODE_LINES]) + "\n…(截断)"
+        out.append((lang, code))
+    return out
+
+
+def _dedup_blocks(blocks: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    seen = set()
+    out = []
+    for lang, code in blocks:
+        key = code[:200]
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((lang, code))
+        if len(out) >= MAX_CODE_BLOCKS:
+            break
+    return out
+
+
 def _is_worth_keeping(row: dict) -> bool:
     """过滤噪音:空响应、错误响应、无实质用户消息的调用。"""
     prompt = (row.get("prompt") or "").strip()
@@ -113,6 +148,7 @@ SUMMARIZE_PROMPT = """你是一个知识库整理助手。下面是一天内用�
 ## 输出格式要求
 - 以 "## 今日知识要点" 开头,按主题分组,每个主题一个小节(### 主题名)
 - 每个小节包含:核心结论(1-2 句)、关键要点(条目列表)、**信息来源**(这条知识来自哪个 IDE/插件:Reasonix / VSCode Roo / IDEA ProxyAI / DeepSeek 网页 / DeepSeek API,在"来源:"后列出)
+- **如果排查问题涉及代码**:在要点中保留关键代码片段(用 ```语言 换行 代码 换行 ``` 的 Markdown 代码块格式),尽量给出修复前/修复后的对比
 - **只输出提炼后的知识**,不要复述对话原文
 - 忽略:寒暄、废话、系统提示词、工具调用细节、思考过程
 - 如果当天没有实质知识,输出 "## 今日知识要点\n(无实质内容)"
@@ -137,21 +173,31 @@ def call_ollama(input_text: str) -> str:
     return (data.get("response") or "").strip()
 
 
-def _make_markdown(day: str, stats: dict, knowledge: str) -> str:
+def _make_markdown(day: str, stats: dict, knowledge: str, code_blocks: list | None = None) -> str:
     tags = "AI知识库, daily"
     sources = stats.get("sources", {})
     src_line = "、".join(f"{k}({v}条)" for k, v in sources.items()) or "无"
+
+    code_section = ""
+    if code_blocks:
+        parts = ["", "## 排查涉及的代码片段", "> 从当日对话中提取,供快速参考。"]
+        for i, (lang, code) in enumerate(code_blocks, 1):
+            parts.append(f"### 片段 {i}" + (f"({lang})" if lang else ""))
+            parts.append(f"```{lang}\n{code}\n```")
+        code_section = "\n".join(parts)
+
     return f"""---
 title: "{day} AI 知识库日报"
 date: {date.today().isoformat()}T06:00:00+08:00
 tags: [{tags}]
-summary: "AI 对话知识提炼:共 {stats['total']} 条对话,提炼 {stats['kept']} 条"
+summary: "AI 对话知识提炼:共 {stats['total']} 条对话,提炼 {stats['kept']} 条{',含代码片段' if code_blocks else ''}"
 ---
 
 > 由本机 AI 自动总结,数据来源:当日 AI 对话记录({stats['kept']}/{stats['total']} 条有效)。
 > 信息来源分布:{src_line}
 
 {knowledge}
+{code_section}
 
 ---
 
@@ -237,11 +283,19 @@ def summarize_day(day: str, dry_run: bool = False) -> Path | None:
         knowledge = call_ollama(input_text)
         print(f"[*] Ollama 总结完成({len(knowledge)} 字符)")
 
+    # 从原始对话中提取代码片段(独立于总结, 避免代码丢失)
+    raw_blocks = []
+    for r in kept:
+        raw_blocks += _extract_code_blocks((r.get("prompt") or "") + "\n" + (r.get("response") or ""))
+    code_blocks = _dedup_blocks(raw_blocks)
+    if code_blocks:
+        print(f"[*] 提取到 {len(code_blocks)} 个代码片段")
+
     md = _make_markdown(day, {
         "total": len(rows),
         "kept": len(kept),
         "sources": dict(src_counter),
-    }, knowledge)
+    }, knowledge, code_blocks)
 
     out_dir = REPO_ROOT / "content" / "posts"
     out_dir.mkdir(parents=True, exist_ok=True)
