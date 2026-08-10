@@ -1,0 +1,4 @@
+# Local tooling artifacts (Reasonix agent state, codegraph db)
+.reasonix/
+.codegraph/
+reasonix.toml
