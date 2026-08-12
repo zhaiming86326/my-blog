@@ -7,6 +7,6 @@ theme = "PaperMod"
   defaultTheme = "dark"
   disableThemeToggle = true
   enableEmoji = true
-  showReadingTime = true
+  showReadingTime = false
   showBreadCrumbs = true
   showToc = true
