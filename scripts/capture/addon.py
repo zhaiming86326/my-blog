@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -60,6 +61,17 @@ MAX_BODY_BYTES = 2 * 1024 * 1024 # 超过 2MB 的请求体(如图片上传)跳�
 
 # AI 回复里的引用标注,如 [citation:2],对知识库无意义,统一剥掉
 CITATION_RE = re.compile(r"\[citation:\d+\]")
+# Reasonix 等客户端注入用户消息前的策略/指令块, 不属于用户输入
+INJECTED_BLOCK_RES = [
+    re.compile(r"<reasoning-language>.*?</reasoning-language>", re.DOTALL),
+    re.compile(r"<execution-policy[^>]*>.*?</execution-policy>", re.DOTALL),
+]
+
+
+def _strip_injected(text: str) -> str:
+    for r in INJECTED_BLOCK_RES:
+        text = r.sub("", text)
+    return text.strip()
 
 
 def _strip_citations(text: str) -> str:
@@ -164,12 +176,57 @@ def _message_text(m: dict) -> str:
     return ""
 
 
-def extract_request(body: bytes) -> tuple[str, str | None, bool]:
-    """从请求体提取 (prompt, model, truncated)。fallback:脱敏后的原文截断。"""
+def _user_text_messages(msgs) -> list[str]:
+    """messages 里 role=user 且 content 为 text 类型的文本列表(排除 tool_result/thinking 等)。"""
+    out = []
+    for m in msgs or []:
+        if not isinstance(m, dict) or m.get("role") != "user":
+            continue
+        c = m.get("content")
+        if isinstance(c, str):
+            if c.strip():
+                out.append(c)
+        elif isinstance(c, list):
+            for item in c:
+                if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str):
+                    if item["text"].strip():
+                        out.append(item["text"])
+    return out
+
+
+def _hash16(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:16]
+
+
+def _session_id_from_body(obj: dict) -> str | None:
+    """会话 id:优先请求体里的会话字段(DeepSeek 网页版等),否则取首条用户消息哈希。
+
+    无状态 API 的请求体通常没有会话 id; 同一会话的每轮请求 messages 都从
+    同一条首条用户消息开始累积, 故首条用户消息哈希在会话内恒定、跨会话不同。
+    """
+    for k in ("chat_session_id", "conversation_id", "session_id", "conversationId", "chatSessionId"):
+        v = obj.get(k)
+        if isinstance(v, str) and v:
+            return v
+    msgs = obj.get("messages")
+    if isinstance(msgs, list):
+        ut = _user_text_messages(msgs)
+        if ut:
+            return _hash16(ut[0])
+    return None
+
+
+def extract_request(body: bytes) -> tuple[str, str | None, bool, str | None]:
+    """从请求体提取 (prompt, model, truncated, session_id)。
+
+    prompt 只取用户本轮输入: messages 里最后一条 role=user 且 content 为
+    text 类型的消息, 剥掉 <reasoning-language> 注入块; 不含 system 提示词、
+    工具结果、AI 历史回复等 agent 拼接内容。fallback: 脱敏后的原文截断。
+    """
     try:
         text = body.decode("utf-8", errors="replace")
     except Exception:
-        return "", None, False
+        return "", None, False, None
 
     obj = None
     try:
@@ -179,23 +236,13 @@ def extract_request(body: bytes) -> tuple[str, str | None, bool]:
 
     if isinstance(obj, dict):
         msgs = _find_messages(obj)
-        if msgs:
-            lines = []
-            for m in msgs:
-                if not isinstance(m, dict):
-                    continue
-                role = m.get("role")
-                author = m.get("author")
-                if not role and isinstance(author, dict):
-                    role = author.get("role")
-                txt = _message_text(m).strip()
-                if txt:
-                    lines.append(f"{role or '?'}: {txt}")
-            if lines:
-                prompt = "\n\n".join(lines)
-                if len(prompt) > MAX_PROMPT_CHARS:
-                    return prompt[:MAX_PROMPT_CHARS], _find_model(obj), True
-                return prompt, _find_model(obj), False
+        if isinstance(msgs, list):
+            ut = _user_text_messages(msgs)
+            if ut:
+                raw = _strip_injected(ut[-1])  # 本轮输入 = 最后一条用户 text 消息
+                if raw:
+                    truncated = len(raw) > MAX_PROMPT_CHARS
+                    return raw[:MAX_PROMPT_CHARS], _find_model(obj), truncated, _session_id_from_body(obj)
         # ChatGPT 新版用单数 "message" 字段(如 {"action":"next", "message": {...}})
         if isinstance(obj.get("message"), dict):
             m = obj["message"]
@@ -205,7 +252,7 @@ def extract_request(body: bytes) -> tuple[str, str | None, bool]:
                 author = m.get("author")
                 if not role and isinstance(author, dict):
                     role = author.get("role")
-                return f"{role or 'user'}: {txt.strip()}", _find_model(obj), False
+                return f"{role or 'user'}: {txt.strip()}", _find_model(obj), False, _session_id_from_body(obj)
         # 无 messages 数组:合并 system + 单轮对话字段(DeepSeek 网页版 prompt / Responses API input)
         parts: list[str] = []
         sys_prompt = obj.get("system")
@@ -225,14 +272,14 @@ def extract_request(body: bytes) -> tuple[str, str | None, bool]:
                     break
         if parts:
             joined = "\n\n".join(parts)
-            return joined[:MAX_PROMPT_CHARS], _find_model(obj), len(joined) > MAX_PROMPT_CHARS
+            return joined[:MAX_PROMPT_CHARS], _find_model(obj), len(joined) > MAX_PROMPT_CHARS, _session_id_from_body(obj)
         # 兜底:落库脱敏后的完整 JSON
         safe = json.dumps(redact(obj), ensure_ascii=False)
         truncated = len(safe) > MAX_PROMPT_CHARS
-        return safe[:MAX_PROMPT_CHARS], _find_model(obj), truncated
+        return safe[:MAX_PROMPT_CHARS], _find_model(obj), truncated, _session_id_from_body(obj)
 
     truncated = len(text) > MAX_PROMPT_CHARS
-    return text[:MAX_PROMPT_CHARS], None, truncated
+    return text[:MAX_PROMPT_CHARS], None, truncated, None
 
 
 def extract_response(content: bytes) -> tuple[str, bool]:
@@ -503,11 +550,14 @@ class AICapture:
             prompt = _strip_citations(prompt)
             response = _strip_citations(response)
             if prompt.strip() or response.strip():
+                # 会话 id: ws 无现成字段, 取该连接第一条用户消息哈希
+                session_id = _hash16(buf["prompt"][0]) if buf.get("prompt") else None
                 insert_conversation(
                     ts=buf["ts"],
                     provider=buf["provider"],
                     model=None,
                     path="/ws",
+                    session_id=session_id,
                     prompt=prompt.strip(),
                     response=response.strip(),
                     truncated=len(response) > MAX_RESPONSE_CHARS,
@@ -527,7 +577,7 @@ class AICapture:
             if len(flow.request.content or b"") > MAX_BODY_BYTES:
                 return  # 大概率是图片/文件上传,跳过
 
-            prompt, model, p_trunc = extract_request(flow.request.content or b"")
+            prompt, model, p_trunc, session_id = extract_request(flow.request.content or b"")
             resp_text, r_trunc = extract_response(flow.response.content)
             prompt = _strip_citations(prompt)
             resp_text = _strip_citations(resp_text)
@@ -539,6 +589,7 @@ class AICapture:
                 provider=provider,
                 model=model,
                 path=flow.metadata.get("ai_path"),
+                session_id=session_id,
                 prompt=prompt.strip(),
                 response=resp_text.strip(),
                 truncated=p_trunc or r_trunc,

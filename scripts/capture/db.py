@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     provider   TEXT    NOT NULL,                -- deepseek-api / chatgpt / gemini / grok ...
     model      TEXT,
     path       TEXT,                            -- 请求路径(便于过滤与追踪)
+    session_id TEXT,                            -- 会话标识(无状态API无现成id,取首条用户消息哈希)
     prompt     TEXT,                            -- 用户侧输入(纯文本,已脱敏)
     response   TEXT,                            -- AI 侧输出(纯文本,已脱敏)
     truncated  INTEGER NOT NULL DEFAULT 0       -- 1 = 原始内容过长被截断
@@ -46,6 +47,8 @@ def init_db() -> None:
         cols = [r[1] for r in conn.execute("PRAGMA table_info(conversations)")]
         if "path" not in cols:
             conn.execute("ALTER TABLE conversations ADD COLUMN path TEXT")
+        if "session_id" not in cols:
+            conn.execute("ALTER TABLE conversations ADD COLUMN session_id TEXT")
 
 
 def insert_conversation(
@@ -54,6 +57,7 @@ def insert_conversation(
     provider: str,
     model: str | None,
     path: str | None = None,
+    session_id: str | None = None,
     prompt: str,
     response: str,
     truncated: bool = False,
@@ -61,13 +65,14 @@ def insert_conversation(
     """写入一条对话记录,返回自增 id。所有字段在调用前已完成脱敏。"""
     with _connect() as conn:
         cur = conn.execute(
-            "INSERT INTO conversations (ts, provider, model, path, prompt, response, truncated)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO conversations (ts, provider, model, path, session_id, prompt, response, truncated)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 ts.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 provider,
                 model,
                 path,
+                session_id,
                 prompt,
                 response,
                 1 if truncated else 0,

@@ -36,7 +36,10 @@ from capture.db import DATA_DIR, query_by_day  # noqa: E402
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 # 默认 14b(质量优先, 约 10-15 分钟/次); 想用 7b 提速: 设环境变量 OLLAMA_MODEL=qwen2.5:7b-instruct
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b-instruct")
-TIME_OUT = 900  # 秒,模型总结可能较慢
+# stream=False 时 Ollama 生成完毕才返回数据, 期间 socket 无数据可读,
+# 超时按"生成总时长"计算; 14b 在小内存机器上可能低至 <1 token/s,
+# 900s 会在大输入(一天数百条对话)时必现超时, 故放宽到 3600s
+TIME_OUT = 3600  # 秒,模型总结可能极慢(14b 低至 0.7 token/s)
 
 # 明显是噪音/错误的响应特征(截断匹配)
 NOISE_RESPONSE_MARKERS = (
@@ -143,11 +146,10 @@ def _is_worth_keeping(row: dict) -> bool:
         return False
     if any(m in resp for m in NOISE_RESPONSE_MARKERS):
         return False
-    # 需要包含用户侧输入(user: 或 prompt: 或 messages 形式)
-    if not re.search(r"user:|prompt:|输入:|用户", prompt[:4000]):
-        return False
-    # 过滤明显是"我"的纯系统提示词调用(没有用户消息)
-    if "system: You are" in prompt and "user:" not in prompt:
+    # 新格式(addon 改造后): prompt 本身就是用户本轮输入, 无 role 前缀;
+    # 旧数据: 可能带 system:/user: 前缀。只过滤纯 system 提示词调用(无任何用户侧内容)
+    p = prompt[:4000]
+    if "system: You are" in p and not re.search(r"user:|prompt:|输入:|用户", p):
         return False
     return True
 
