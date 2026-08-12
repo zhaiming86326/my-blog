@@ -38,13 +38,11 @@ DEBUG_FILTER_LOG = DATA_DIR / "filter_debug.log"
 log = logging.getLogger("ai-capture")
 
 # 域名 -> provider 名(支持子域名匹配,如 ai.chatgpt.com)
+# 只保留 IDE/CLI 工具(Reasonix / VSCode Roo / IDEA / Zed 等)的 API 端点;
+# DeepSeek/ChatGPT/Grok/Gemini 等网页版(chat.* / 根域)不记录。
 HOST_PROVIDERS = {
-    "api.deepseek.com": "deepseek-api",   # DeepSeek API
-    "chat.deepseek.com": "deepseek",      # DeepSeek 网页
-    "chatgpt.com": "chatgpt",
-    "chat.openai.com": "chatgpt",
-    "grok.com": "grok",
-    "api.x.ai": "grok-api",               # xAI API
+    "api.deepseek.com": "deepseek-api",   # 工具走 DeepSeek Anthropic/OpenAI 兼容 API
+    "api.x.ai": "grok-api",               # xAI API(工具类)
 }
 
 # 提取时视为敏感的字段名(递归脱敏,防止 API key 混入 body 落库)
