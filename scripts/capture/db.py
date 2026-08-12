@@ -30,6 +30,17 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_ts ON conversations (ts);
 CREATE INDEX IF NOT EXISTS idx_conversations_provider ON conversations (provider);
+
+-- 网络搜集的知识条目(精选列表,含来源链接)
+CREATE TABLE IF NOT EXISTS articles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title      TEXT    NOT NULL,
+    url        TEXT    NOT NULL,
+    source     TEXT,
+    summary    TEXT,
+    tags       TEXT,
+    fetched_at TEXT
+);
 """
 
 
