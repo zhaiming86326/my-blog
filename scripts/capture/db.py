@@ -60,6 +60,9 @@ def init_db() -> None:
             conn.execute("ALTER TABLE conversations ADD COLUMN path TEXT")
         if "session_id" not in cols:
             conn.execute("ALTER TABLE conversations ADD COLUMN session_id TEXT")
+        a_cols = [r[1] for r in conn.execute("PRAGMA table_info(articles)")]
+        if "published" not in a_cols:
+            conn.execute("ALTER TABLE articles ADD COLUMN published INTEGER NOT NULL DEFAULT 0")
 
 
 def insert_conversation(
