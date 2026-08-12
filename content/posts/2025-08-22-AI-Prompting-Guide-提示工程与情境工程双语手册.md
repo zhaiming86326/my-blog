@@ -2,7 +2,7 @@
 title: "AI Prompting Guide：提示工程与情境工程双语手册"
 date: 2025-08-22T08:00:00+08:00
 tags: [AI, 文章]
-summary: "AI提示词宝典（AIPromptingGuide）是一本免费的双语手册，涵盖了提示工程、情境工程以及2026年的代理式编程（agentic"vibe"codin"
+summary: "AI提示词宝典（AIPromptingGuide）是一本免费的双语手册，涵盖了提示工程、情境工程以及2026年的代理式编程（agentic vibe coding）与Claude Code/OpenAI Codex 等AI编码代理的实践方法。"
 source: "https://github.com/thc1006/ai-prompting-guide"
 ---
 
