@@ -86,12 +86,14 @@ def query_by_day(day: str) -> list[dict]:
 
     day 按本机本地时区解释:当天 00:00:00 至 23:59:59.999。
     注意 ts 以 UTC 存储,这里用 SQLite 的 localtime 修正回本地时区比较。
+    边界值不再套 datetime(?, 'localtime')(那会把边界当 UTC 再 +8h,
+    导致凌晨 00:00-08:00 的记录被漏掉),直接与本地化后的 ts 字符串比较。
     """
     start, end = day + " 00:00:00", day + " 23:59:59.999"
     with _connect() as conn:
         rows = conn.execute(
             "SELECT * FROM conversations"
-            " WHERE datetime(ts, 'localtime') BETWEEN datetime(?, 'localtime') AND datetime(?, 'localtime')"
+            " WHERE datetime(ts, 'localtime') BETWEEN ? AND ?"
             " ORDER BY ts",
             (start, end),
         ).fetchall()
