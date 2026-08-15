@@ -70,7 +70,10 @@ if (-not $mitmdump) {
     $mitmdump = "$env:LOCALAPPDATA\Programs\Python\Python311\Scripts\mitmdump.exe"
 }
 $pidFile = Join-Path $captureDir "mitmdump.pid"
-Start-Process $mitmdump -ArgumentList "-s", "`"$addon`"", "-p", "8080", "--set", "console_eventlog_verbosity=info" -WindowStyle Hidden -PassThru | ForEach-Object {
+# 2026-08-11 修复: 补上 --mode upstream, 否则 mitmdump 以直连(regular)模式运行,
+# 无法访问被墙的 AI 域名 -> 浏览器 AI 网站全部打不开。与 run-capture.ps1 保持一致。
+$upstream = "upstream:http://127.0.0.1:10809"
+Start-Process $mitmdump -ArgumentList "--mode", $upstream, "-s", "`"$addon`"", "-p", "8080", "--set", "console_eventlog_verbosity=info" -WindowStyle Hidden -PassThru | ForEach-Object {
     $_.Id | Out-File $pidFile -Encoding ascii
 }
 

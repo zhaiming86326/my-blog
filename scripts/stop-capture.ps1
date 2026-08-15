@@ -20,6 +20,9 @@ if (Test-Path $pidFile) {
 # 兜底: 杀 18081 监听
 Get-NetTCPConnection -LocalPort 18081 -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+# 兜底: 杀 8080 监听 (mitmdump 实际由 python.exe 承载, 只杀 shim 会遗留孤儿进程占端口)
+Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 
 # 还原系统代理
 Remove-ItemProperty -Path $regPath -Name AutoConfigURL -ErrorAction SilentlyContinue
