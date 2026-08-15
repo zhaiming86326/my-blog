@@ -230,7 +230,7 @@ def _make_markdown(day: str, stats: dict, knowledge: str, code_blocks: list | No
 
     return f"""---
 title: "{day} AI 知识库日报"
-date: {date.today().isoformat()}T06:00:00+08:00
+date: {day}T06:00:00+08:00
 tags: [{tags}]
 summary: "AI 对话知识提炼:共 {stats['total']} 条对话,提炼 {stats['kept']} 条{',含代码片段' if code_blocks else ''}"
 ---
