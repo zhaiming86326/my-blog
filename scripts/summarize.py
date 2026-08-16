@@ -25,7 +25,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +53,8 @@ NOISE_RESPONSE_MARKERS = (
 
 def _detect_source(row: dict) -> str:
     """根据请求内容特征推断来源应用(IDE/插件)。"""
+    if row.get("provider") == "deepseek-harness":
+        return "DeepSeek Harness"
     prompt = row.get("prompt") or ""
     path = row.get("path") or ""
     markers = [
@@ -158,6 +160,139 @@ def _truncate(text: str, limit: int = 1500) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "\n…(截断)"
+
+
+# ---------------------------------------------------------------- DeepSeek Harness 会话日志源
+# harness(Node) 不走系统代理, mitmproxy 抓不到, 日报需直接解析其会话日志。
+# 日志位置: <DSH_HOME>/sessions/<workspace>/<session-id>/session.jsonl[.zstd]
+HARNESS_SESSIONS_ROOT = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh"))) / "sessions"
+
+# 日志里非用户真实输入的消息块(截断匹配), 提取 prompt 时剔除
+HARNESS_INJECT_MARKERS = (
+    "<system-reminder>",
+    "<interrupted-turn-recovery>",
+    "<background-jobs>",
+    "Current runtime context",
+    "<reasoning-language>",
+    "<execution-policy>",
+)
+
+HARNESS_MAX_RESPONSE_CHARS = 400_000
+
+
+def _harness_log_paths() -> list[Path]:
+    """枚举 <DSH_HOME>/sessions 下的会话日志(压缩/未压缩)。"""
+    if not HARNESS_SESSIONS_ROOT.is_dir():
+        return []
+    return sorted(HARNESS_SESSIONS_ROOT.glob("*/*/session.jsonl*"))
+
+
+def _parse_harness_log(path: Path, day: str) -> list[dict]:
+    """把一个 harness 会话日志按 turn 整理成与 capture 同结构的记录。
+
+    只收根会话(delegationDepth=0)、以 completed 结束的 turn; 每轮取第一条
+    真实用户消息为 prompt, 拼接该 turn 全部 assistant text 为 response,
+    丢弃 reasoning/tool-call 等非正文内容。
+    """
+    raw = path.read_bytes()
+    if path.suffix == ".zstd":
+        import io
+        import zstandard
+        raw = zstandard.ZstdDecompressor().stream_reader(io.BytesIO(raw)).read()
+    lines = raw.decode("utf-8", errors="replace").splitlines()
+
+    header = None
+    events = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "session":
+            header = obj
+        else:
+            events.append(obj)
+
+    # 只收根会话: 子代理(delegationDepth>0)会重复父会话内容
+    if header is None or (header.get("delegationDepth") or 0) > 0:
+        return []
+
+    turns: dict[int, dict] = {}
+    order: list[int] = []
+    cur_turn: int | None = None
+    for ev in events:
+        t = ev.get("type")
+        data = ev.get("data") or {}
+        # user/message 等事件自身不带 turn 字段, 用当前 turn 推断
+        turn = data.get("turn") if data.get("turn") is not None else cur_turn
+        if t == "turn/start":
+            cur_turn = turn
+            if turn is not None and turn not in turns:
+                turns[turn] = {"prompt": None, "texts": [], "ok": False, "time": ev.get("time")}
+                order.append(turn)
+        elif t == "user/message":
+            if turn is None or turn not in turns:
+                continue
+            if (data.get("source") or {}).get("kind") != "user":
+                continue
+            texts = [c.get("text", "") for c in data.get("content") or []
+                     if isinstance(c, dict) and c.get("type") == "text"]
+            prompt = "\n".join(texts).strip()
+            if not prompt or any(m in prompt for m in HARNESS_INJECT_MARKERS):
+                continue
+            if turns[turn]["prompt"] is None:
+                turns[turn]["prompt"] = prompt
+                if turns[turn]["time"] is None:
+                    turns[turn]["time"] = ev.get("time")
+        elif t == "assistant/message":
+            if turn is None or turn not in turns:
+                continue
+            for c in (data.get("message") or {}).get("content") or []:
+                if (isinstance(c, dict) and c.get("type") == "text"
+                        and isinstance(c.get("text"), str) and c["text"].strip()):
+                    turns[turn]["texts"].append(c["text"])
+        elif t == "turn/end":
+            if turn is None or turn not in turns:
+                continue
+            if (data.get("reason") or {}).get("kind") == "completed":
+                turns[turn]["ok"] = True
+
+    out = []
+    for turn in order:
+        it = turns[turn]
+        if not it["ok"] or not it["prompt"] or not it["texts"]:
+            continue
+        ts = it["time"]
+        if not ts:
+            continue
+        dt = datetime.fromtimestamp(ts / 1000)
+        if dt.strftime("%Y-%m-%d") != day:
+            continue
+        response = "\n\n".join(it["texts"])[:HARNESS_MAX_RESPONSE_CHARS]
+        out.append({
+            "ts": dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "provider": "deepseek-harness",
+            "model": None,
+            "path": "harness-log",
+            "session_id": path.parent.name,
+            "prompt": it["prompt"][:40_000],
+            "response": response,
+            "truncated": False,
+        })
+    return out
+
+
+def query_harness_by_day(day: str) -> list[dict]:
+    """读取指定本地日期的 DeepSeek Harness 会话日志, 返回与 capture 同结构的记录。"""
+    rows = []
+    for path in _harness_log_paths():
+        try:
+            rows += _parse_harness_log(path, day)
+        except Exception as e:
+            print(f"[!] 解析 harness 会话日志失败 {path}: {e}")
+    return rows
 
 
 def _build_input(rows: list[dict]) -> str:
@@ -308,11 +443,13 @@ def _last_summarized_day() -> date | None:
 def summarize_day(day: str, dry_run: bool = False) -> Path | None:
     """总结某一天, 返回生成的 md 文件路径; 无数据返回 None。"""
     rows = query_by_day(day)
+    harness_rows = query_harness_by_day(day)
+    rows = rows + harness_rows
     if not rows:
         print(f"[!] {day} 没有对话记录,跳过")
         return None
     kept = [r for r in rows if _is_worth_keeping(r)]
-    print(f"[*] {day} 共 {len(rows)} 条记录,有效 {len(kept)} 条")
+    print(f"[*] {day} 共 {len(rows)} 条记录(capture {len(rows) - len(harness_rows)} + harness {len(harness_rows)}),有效 {len(kept)} 条")
 
     from collections import Counter
     src_counter = Counter(_detect_source(r) for r in kept)
