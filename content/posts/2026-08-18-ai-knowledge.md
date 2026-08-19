@@ -2,88 +2,89 @@
 title: "2026-08-18 AI 知识库日报"
 date: 2026-08-18T06:00:00+08:00
 tags: [AI知识库, daily]
-summary: "AI 对话知识提炼:共 120 条对话,提炼 104 条,含代码片段"
+summary: "AI 对话知识提炼:共 124 条对话,提炼 107 条,含代码片段"
 ---
 
-> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(104/120 条有效)。
-> 信息来源分布:DeepSeek API(103条)、DeepSeek Harness(1条)
+> 由本机 AI 自动总结,数据来源:当日 AI 对话记录(107/124 条有效)。
+> 信息来源分布:DeepSeek API(103条)、Continue (本地)(3条)、DeepSeek Harness(1条)
 
 ## 今日知识要点
 
-### PAC配置问题
-- **核心结论**：当前 PAC 配置将所有流量指向 v2rayN，导致 v2rayN 退出后无法上网。
+### PAC 设计问题
+- **核心结论**：当前 PAC 设计将所有流量指向 v2rayN 的 10809 端口，导致 v2rayN 退出后所有流量无法正常访问。
 - **关键要点**
-  - 当前 PAC 配置：AI 域名 → 8080(mitmproxy) → 10809(v2rayN)，其他流量 → 10809(v2rayN)。
-  - 问题原因：v2rayN 退出后，10809 端口失效，所有流量指向死端口，导致全网断网。
-  - 解决方案：
-    - 更好的 PAC 设计：AI 域名 → 8080(mitmproxy 直连)，其他 → DIRECT(直连)。
-    - 仅抓 DeepSeek 的 PAC：AI 域名 → 8080，其他 → DIRECT。
-    - 需要翻墙的流量 → 8080 → 10809。
+  - 当前 PAC 设计：AI 域名 → 8080(mitmproxy) → 10809(v2rayN)，其他流量 → 10809(v2rayN)。
+  - 问题：v2rayN 退出后，10809 端口失效，所有流量指向死端口，导致全网断网。
+  - 解决方案：改进 PAC 设计，使非 AI 流量直接走 DIRECT，AI 流量走 mitmproxy，mitmproxy 根据域名选择出站方式。
+  - 具体操作：mitmproxy 配置按域名路由出站，或使用插件实现动态上游选择。
 - **信息来源**：DeepSeek API
 
-### 修复启动失败的bug
-- **核心结论**：启动失败的原因是 `LangChainConfig.java` 中未解析的 `@Value` 占位符导致 Spring 启动失败。
+### 修复启动失败的 bug
+- **核心结论**：启动失败的原因是 `LangChainConfig.java` 中保留了未使用的 Azure `@Value` 注入字段，导致 Spring 启动时解析占位符失败。
 - **关键要点**
-  - 问题原因：`LangChainConfig.java` 中保留了三个 `@Value` 注入字段，但未定义环境变量。
-  - 修复步骤：
-    - 删除无用的 `@Value` 注入字段。
-    - 清理 `LangChainConfig.java`，保留纯 Ollama 配置。
-    - 修改 `01-introduction/pom.xml`，移除 `langchain4j-ollama-spring-boot-starter`，改为直接依赖 `langchain4j-ollama`。
-  - 启动前注意事项：
-    - 确保本地 Ollama 服务和模型已启动。
-    - 根 `pom.xml` 中 `01-introduction` 模块未被注释。
-- **信息来源**：DeepSeek API
-
-### 构建和运行 IntelliJ 插件
-- **核心结论**：创建一个 IntelliJ 插件，实现右键选中文本后翻译为中文简体。
-- **关键要点**
-  - 项目结构：
-    - `build.gradle.kts`
-    - `settings.gradle.kts`
-    - `src/main/kotlin/...`
-    - `src/main/resources/META-INF/plugin.xml`
-  - 插件功能：
-    - 右键菜单 "翻譯此段"
-    - 使用 Google 免费翻译接口或本地 LLM 模型。
-    - 显示翻译结果。
-  - 实现细节：
-    - 使用 `AnAction` 子类注册右键菜单。
-    - 获取选中文本并调用翻译 API。
-    - 显示翻译结果。
-  - 构建验证：`gradle buildPlugin`
-- **信息来源**：DeepSeek API
-
-### 使用本地 LLM 模型进行翻译
-- **核心结论**：修改 IntelliJ 插件，使用本地 LLM 模型进行翻译。
-- **关键要点**
-  - 修改 `Translator.kt`，调用本地 Ollama API。
-  - 更新 `plugin.xml` 和 `README.md`。
-  - Ollama API 请求格式：
-    ```json
-    {
-      "model": "qwen:14b",
-      "prompt": "Translate to Simplified Chinese: ...",
-      "stream": false
+  - 问题：`LangChainConfig.java` 中保留了三个 `@Value` 注入字段，但未定义环境变量，导致 Spring 启动失败。
+  - 解决方案：删除 `LangChainConfig.java` 中的 Azure 相关字段和注释代码，保留纯 Ollama 配置。
+  - 修复后的配置：
+    ```java
+    @Configuration
+    public class LangChainConfig {
+        @Bean
+        public ChatModel chatModel() {
+            return OllamaChatModel.builder()
+                .baseUrl("http://localhost:11434")
+                .modelName("qwen2.5:14b-instruct")
+                .temperature(0.7)
+                .build();
+        }
     }
     ```
-  - 响应格式：
-    ```json
-    {
-      "model": "qwen:14b",
-      "response": "翻譯結果...",
-      "done": true
+  - 启动前还需确认：
+    - 确保本地 Ollama 服务和模型 `qwen2.5:14b-instruct` 已启动并拉取。
+    - 确认根 `pom.xml` 中 `01-introduction` 模块未被注释。
+- **信息来源**：DeepSeek API
+
+### 使用本地 LLM 模型进行翻译插件开发
+- **核心结论**：修改 IntelliJ IDEA 插件，使其使用本地 LLM 模型进行翻译。
+- **关键要点**
+  - 插件功能：右键选中文本后，出现“翻译为中文（简体）”菜单，使用本地 LLM 模型进行翻译。
+  - 请求地址：`http://localhost:11434/api/generate`
+  - 修改 `Translator.kt` 文件，调用 Ollama API 进行翻译。
+  - 更新 `plugin.xml` 和 `README.md` 文件，移除 Google 翻译相关描述。
+  - 具体操作：
+    ```kotlin
+    object Translator {
+        private const val ENDPOINT = "http://localhost:11434/api/generate"
+        private const val MODEL = "qwen:14b"
+        private val client: HttpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(10))
+            .build()
+
+        fun translate(text: String): String {
+            val payload = JsonObject().apply {
+                addProperty("model", MODEL)
+                addProperty("prompt", "Translate to Simplified Chinese: $text")
+                addProperty("stream", false)
+            }
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create(ENDPOINT))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                .build()
+            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            val jsonResponse = JsonParser.parseString(response.body()).asJsonObject
+            return jsonResponse.get("response").asString
+        }
     }
-  - 本地 LLM 模型请求地址：`http://localhost:11434/api/generate`
+    ```
 - **信息来源**：DeepSeek API
 
 ### 诊断 Gradle 构建卡死问题
-- **核心结论**：Gradle 构建卡死的原因是通过本地代理下载 IntelliJ SDK 时网络隧道是死的。
+- **核心结论**：Gradle 构建卡死的原因是通过本地代理下载 IntelliJ SDK 时，代理隧道未建立或已断开。
 - **关键要点**
-  - 卡住的会话从 22:35:14 开始执行 `gradle buildPlugin`。
-  - Gradle daemon 日志卡在「Calculating task graph」阶段。
-  - 代理端口 `127.0.0.1:10809` 未建立有效连接。
-  - 本地代理 `v2rayN/xray` 未连接到上游服务器。
-  - 解决方案：确保代理正常工作，或直接下载 IntelliJ SDK。
+  - 卡死的会话从 `22:35:14` 开始执行 `gradle buildPlugin`，日志文件在 `22:35:17` 后再无更新。
+  - Gradle daemon 有一条到 `127.0.0.1:10809` 的 ESTABLISHED 连接，但数据不动。
+  - 代理端口 `10809` 由 v2rayN/xray 监听，但 xray 未连接到上游服务器。
+  - 解决方案：确保代理隧道正常，或直连下载 IntelliJ SDK。
 - **信息来源**：DeepSeek API
 
 ## 排查涉及的代码片段
