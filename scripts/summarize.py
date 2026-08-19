@@ -34,12 +34,16 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from capture.db import DATA_DIR, query_by_day  # noqa: E402
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-# 默认 14b(质量优先, 约 10-15 分钟/次); 想用 7b 提速: 设环境变量 OLLAMA_MODEL=qwen2.5:7b-instruct
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:14b-instruct")
+# 默认 7b(速度/质量平衡, 几分钟/次); 想用 14b 提质: 设环境变量 OLLAMA_MODEL=qwen2.5:14b-instruct
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b-instruct")
 # stream=False 时 Ollama 生成完毕才返回数据, 期间 socket 无数据可读,
-# 超时按"生成总时长"计算; 14b 在小内存机器上可能低至 <1 token/s,
-# 900s 会在大输入(一天数百条对话)时必现超时, 故放宽到 3600s
-TIME_OUT = 3600  # 秒,模型总结可能极慢(14b 低至 0.7 token/s)
+# 超时按"生成总时长"计算; 7b 一般 10-20 token/s, 单批最多几分钟, 留足余量
+TIME_OUT = 1800  # 秒
+
+# 单次送模型的输入字符上限: 一天可能数百条对话, 全部塞进一次调用会超过
+# qwen2.5 默认 num_ctx=32768(约 2 字符/token), 模型只会看到输入尾部 -> 总结失真。
+# 超过则自动分批总结再合并。
+CHUNK_CHARS = 40_000
 
 # 明显是噪音/错误的响应特征(截断匹配)
 NOISE_RESPONSE_MARKERS = (
@@ -55,6 +59,12 @@ def _detect_source(row: dict) -> str:
     """根据请求内容特征推断来源应用(IDE/插件)。"""
     if row.get("provider") == "deepseek-harness":
         return "DeepSeek Harness"
+    if row.get("provider") in ("local-continue", "local-roo", "local-reasonix"):
+        return {
+            "local-continue": "Continue (本地)",
+            "local-roo": "Roo Code (本地)",
+            "local-reasonix": "Reasonix (本地)",
+        }[row["provider"]]
     prompt = row.get("prompt") or ""
     path = row.get("path") or ""
     markers = [
@@ -311,6 +321,39 @@ def _build_input(rows: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
+def _chunk_rows(rows: list[dict]) -> list[list[dict]]:
+    """把一天的有效对话按估算长度分批, 每批单独送模型, 避免上下文溢出。"""
+    chunks: list[list[dict]] = []
+    cur: list[dict] = []
+    size = 0
+    for r in rows:
+        est = len(r.get("prompt") or "") + len(r.get("response") or "") + 200
+        if cur and size + est > CHUNK_CHARS:
+            chunks.append(cur)
+            cur, size = [], 0
+        cur.append(r)
+        size += est
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def _merge_chunks(parts: list[str]) -> str:
+    """合并多批总结: 只保留第一个 "## 今日知识要点" 标题, 后续批次的标题去掉、内容拼接。"""
+    merged = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        if p.startswith("## 今日知识要点"):
+            p = p[len("## 今日知识要点"):].strip()
+        if p and p != "(无实质内容)":
+            merged.append(p)
+    if not merged:
+        return "## 今日知识要点\n(无实质内容)"
+    return "## 今日知识要点\n\n" + "\n\n".join(merged)
+
+
 SUMMARIZE_PROMPT = """你是一个知识库整理助手。下面是一天内用户与 AI 助手(DeepSeek/ChatGPT/Grok 等)的对话记录(可能有工具调用、思考过程、系统提示词等噪音)。
 
 请提炼出**值得沉淀的知识**,输出 Markdown 格式的知识卡片:
@@ -458,9 +501,16 @@ def summarize_day(day: str, dry_run: bool = False) -> Path | None:
     if not kept:
         knowledge = "## 今日知识要点\n(无实质内容)"
     else:
-        input_text = _build_input(kept)
-        knowledge = call_ollama(input_text)
-        print(f"[*] Ollama 总结完成({len(knowledge)} 字符)")
+        chunks = _chunk_rows(kept)
+        parts = []
+        for i, chunk in enumerate(chunks, 1):
+            input_text = _build_input(chunk)
+            print(f"[*] 第 {i}/{len(chunks)} 批({len(chunk)} 条) 送 Ollama ...")
+            out = call_ollama(input_text)
+            if out:
+                parts.append(out)
+        knowledge = _merge_chunks(parts)
+        print(f"[*] Ollama 总结完成({len(knowledge)} 字符, {len(chunks)} 批)")
 
     # 从原始对话中提取代码片段(独立于总结, 避免代码丢失)
     raw_blocks = []
@@ -491,7 +541,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("day", nargs="?", default=None, help="要总结的日期 YYYY-MM-DD; 不填则自动补漏上次日报之后的所有日期")
     parser.add_argument("--dry-run", action="store_true", help="只生成 md,不 git push")
+    parser.add_argument("--no-import", action="store_true", help="跳过本地会话导入(纯抓包数据)")
     args = parser.parse_args()
+
+    # 每次总结前先同步本地 IDE/agent 会话(Continue/Roo/Reasonix)新记录到库
+    if not args.no_import:
+        try:
+            from import_local import import_all
+            import_all(dry_run=args.dry_run, days_back=90)
+        except Exception as e:
+            print(f"[!] 本地会话导入失败(继续): {e}")
 
     if not ensure_ollama():
         print("[!] Ollama 服务不可用,无法总结")
