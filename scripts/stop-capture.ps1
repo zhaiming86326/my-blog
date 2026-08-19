@@ -12,8 +12,8 @@ Write-Host "[*] mitmdump 已停止"
 # 杀 PAC 托管服务
 $pidFile = Join-Path $captureDir "pac_server.pid"
 if (Test-Path $pidFile) {
-    $pid = (Get-Content $pidFile).Trim()
-    Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    $pacPid = (Get-Content $pidFile).Trim()
+    Stop-Process -Id $pacPid -Force -ErrorAction SilentlyContinue
     Remove-Item $pidFile -ErrorAction SilentlyContinue
     Write-Host "[*] PAC 托管已停止"
 }
