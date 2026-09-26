@@ -9,6 +9,8 @@
 ├─ Continue     ~/.continue/sessions/*.json
 ├─ Roo Code     %APPDATA%\Code\User\globalStorage\rooveterinaryinc.roo-cline\tasks\<id>\api_conversation_history.json
 ├─ Reasonix     %APPDATA%\reasonix\archive\context-*.jsonl
+├─ Codex 桌面版 ~/.codex/sessions/**/rollout-*.jsonl(originator=Codex Desktop)
+├─ Codex VSCode ~/.codex/sessions/**/rollout-*.jsonl(originator=codex_vscode, 即 VSCode 的 Codex/ChatGPT 扩展)
 ├─ DeepSeek Harness  <DSH_HOME>/sessions/<ws>/<session>/session.jsonl[.zstd]
 └─ 抓包(可选)   mitmproxy 8080 -> .capture/capture.db(DeepSeek API 等)
 

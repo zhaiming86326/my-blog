@@ -59,11 +59,14 @@ def _detect_source(row: dict) -> str:
     """根据请求内容特征推断来源应用(IDE/插件)。"""
     if row.get("provider") == "deepseek-harness":
         return "DeepSeek Harness"
-    if row.get("provider") in ("local-continue", "local-roo", "local-reasonix"):
+    if row.get("provider") in ("local-continue", "local-roo", "local-reasonix",
+                              "local-codex-desktop", "local-codex-vscode"):
         return {
             "local-continue": "Continue (本地)",
             "local-roo": "Roo Code (本地)",
             "local-reasonix": "Reasonix (本地)",
+            "local-codex-desktop": "Codex 桌面版 (本地)",
+            "local-codex-vscode": "Codex VSCode 扩展 (本地)",
         }[row["provider"]]
     prompt = row.get("prompt") or ""
     path = row.get("path") or ""
@@ -360,7 +363,7 @@ SUMMARIZE_PROMPT = """你是一个知识库整理助手。下面是一天内用�
 
 ## 输出格式要求
 - 以 "## 今日知识要点" 开头,按主题分组,每个主题一个小节(### 主题名)
-- 每个小节包含:核心结论(1-2 句)、关键要点(条目列表)、**信息来源**(这条知识来自哪个 IDE/插件:Reasonix / VSCode Roo / IDEA ProxyAI / DeepSeek 网页 / DeepSeek API,在"来源:"后列出)
+- 每个小节包含:核心结论(1-2 句)、关键要点(条目列表)、**信息来源**(这条知识来自哪个 IDE/插件:Reasonix / VSCode Roo / Codex 桌面版 / Codex VSCode 扩展 / IDEA ProxyAI / DeepSeek 网页 / DeepSeek API,在"来源:"后列出)
 - **如果排查问题涉及代码**:在要点中保留关键代码片段(用 ```语言 换行 代码 换行 ``` 的 Markdown 代码块格式),尽量给出修复前/修复后的对比
 - **只输出提炼后的知识**,不要复述对话原文
 - 忽略:寒暄、废话、系统提示词、工具调用细节、思考过程
